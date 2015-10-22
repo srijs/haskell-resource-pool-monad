@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-module Control.Monad.Trans.Pool (WithPoolT, WithPool, runWithPool, withPool) where
+module Control.Monad.Trans.Pool (WithResourceT, WithResource, withResource, runPooled, runDedicated) where
 
 import Control.Arrow (Kleisli(..))
 import Control.Monad.Trans.Class (MonadTrans(lift))
@@ -9,24 +9,31 @@ import Control.Monad.Trans.Control (MonadBaseControl)
 import Control.Monad.Trans.Free.Church (FT, toFT, iterT, liftF)
 
 import Data.Functor.Coyoneda (Coyoneda(..), liftCoyoneda)
-import Data.Pool (Pool, withResource)
+import Data.Pool (Pool)
+import qualified Data.Pool as Pool (withResource)
 
-newtype WithPoolF r m a = WithPoolF (Coyoneda (Kleisli m r) a)
+newtype WithResourceF r m a = WithResourceF (Coyoneda (Kleisli m r) a)
   deriving Functor
 
-type WithPool r a = WithPoolT r IO a
+type WithResource r a = WithResourceT r IO a
 
-newtype WithPoolT r m a = WithPoolT (FT (WithPoolF r m) m a)
+newtype WithResourceT r m a = WithResourceT (FT (WithResourceF r m) m a)
   deriving (Functor, Applicative, Monad)
 
-instance MonadTrans (WithPoolT r) where
-  lift = WithPoolT . lift
+instance MonadTrans (WithResourceT r) where
+  lift = WithResourceT . lift
 
-runWithPoolF :: MonadBaseControl IO m => Pool r -> WithPoolF r m (m a) -> m a
-runWithPoolF pool (WithPoolF (Coyoneda next k)) = withResource pool (runKleisli k) >>= next
+runPooledF :: MonadBaseControl IO m => Pool r -> WithResourceF r m (m a) -> m a
+runPooledF pool (WithResourceF (Coyoneda next k)) = Pool.withResource pool (runKleisli k) >>= next
 
-runWithPool :: MonadBaseControl IO m => WithPoolT r m a -> Pool r -> m a
-runWithPool (WithPoolT m) pool = iterT (runWithPoolF pool) m
+runPooled :: MonadBaseControl IO m => WithResourceT r m a -> Pool r -> m a
+runPooled (WithResourceT m) pool = iterT (runPooledF pool) m
 
-withPool :: Monad m => (r -> m a) -> WithPoolT r m a
-withPool = WithPoolT . liftF . WithPoolF . liftCoyoneda . Kleisli
+runDedicatedF :: Monad m => r -> WithResourceF r m (m a) -> m a
+runDedicatedF r (WithResourceF (Coyoneda next k)) = runKleisli k r >>= next
+
+runDedicated :: Monad m => WithResourceT r m a -> r -> m a
+runDedicated (WithResourceT m) r = iterT (runDedicatedF r) m
+
+withResource :: Monad m => (r -> m a) -> WithResourceT r m a
+withResource = WithResourceT . liftF . WithResourceF . liftCoyoneda . Kleisli

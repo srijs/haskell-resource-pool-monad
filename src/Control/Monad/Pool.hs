@@ -1,4 +1,4 @@
-module Control.Monad.Pool (WithResource, withResource, runPooled, runDedicated) where
+module Control.Monad.Pool (WithResource, withResource, tryWithResource, runPooled, runDedicated) where
 
 import qualified Control.Monad.Trans.Pool as T
 
@@ -14,3 +14,6 @@ runDedicated (WithResource m) = T.runDedicated m
 
 withResource :: (r -> IO a) -> WithResource r a
 withResource = WithResource . T.withResource
+
+tryWithResource :: (r -> IO a) -> WithResource r (Maybe a)
+tryWithResource = WithResource . T.tryWithResource
